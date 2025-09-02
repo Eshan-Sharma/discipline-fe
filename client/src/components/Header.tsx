@@ -22,7 +22,7 @@ export function Header() {
       </div>
 
       <div className="wallet-adapter-button-trigger">
-        <WalletMultiButton className="!bg-blue-600 hover:!bg-blue-700 !rounded-lg !font-medium transition-all duration-200" />
+        <WalletMultiButton />
       </div>
     </motion.header>
   );
