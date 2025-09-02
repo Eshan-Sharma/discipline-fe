@@ -11,6 +11,10 @@ import { AnchorProvider, Program, Idl, Wallet } from "@coral-xyz/anchor";
 import { useEffect, useState } from "react";
 import BN from "@coral-xyz/anchor";
 
+import { BorshAccountsCoder } from "@coral-xyz/anchor";
+
+const coder = new BorshAccountsCoder(idl as Idl);
+
 interface ActiveTasksListProps {
   tasks: Task[];
   onResolveTask: (taskId: number, completed: boolean) => void;
@@ -45,50 +49,42 @@ interface MinimalWallet {
 export async function fetchTasks(userPublicKey: string) {
   const connection = new Connection(SOLANA_RPC, "confirmed");
 
-  const dummyWallet: MinimalWallet = {
-    publicKey: new PublicKey(userPublicKey),
-    signTransaction: async (tx) => tx,
-    signAllTransactions: async (txs) => txs,
-  };
+  const coder = new BorshAccountsCoder(idl as Idl);
 
-  const provider = new AnchorProvider(connection, dummyWallet as Wallet, {
-    preflightCommitment: "processed",
-  });
-
-  const program = new Program(idl as Idl, provider) as Program<Idl>;
-
-  const filters = [
-    {
-      memcmp: {
-        offset: 16, // discriminator (8) + task_id (8)
-        bytes: userPublicKey,
+  const accounts = await connection.getProgramAccounts(PROGRAM_ID, {
+    filters: [
+      {
+        memcmp: {
+          offset: 8 + 8, // discriminator (8) + task_id (8)
+          bytes: userPublicKey,
+        },
       },
-    },
-  ];
+    ],
+  });
+  // Decode Task accounts
+  const tasks = accounts.map(({ account, pubkey }) => {
+    const decoded = coder.decode<TaskAccount>("Task", account.data);
 
-  // Replace 'task' with the correct account name from your IDL, e.g., 'tasks' if that's the actual account name
-  const accounts = await program.account.task.all(filters);
-
-  return accounts.map((acc: { account: TaskAccount; publicKey: PublicKey }) => {
-    const { account, publicKey } = acc;
-
-    const status =
-      "pending" in account.status
+    const status: "pending" | "completed" | "failed" =
+      "pending" in decoded.status
         ? "pending"
-        : "completed" in account.status
+        : "completed" in decoded.status
         ? "completed"
         : "failed";
 
     return {
-      id: account.taskId,
-      owner: account.owner.toBase58(),
-      description: account.description,
-      stakeAmount: account.stakeAmount.toString(),
-      expiresAt: account.expiresAt,
+      id: Number(decoded.taskId),
+      owner: decoded.owner.toBase58(),
+      description: decoded.description,
+      stakeAmount: Number(decoded.stakeAmount),
+      expiresAt: Number(decoded.expiresAt),
       status,
-      pubkey: publicKey.toBase58(),
+      duration: 7, // Default duration - adjust as needed
+      createdAt: Number(decoded.expiresAt) - 7 * 24 * 60 * 60, // Calculate from expiresAt
     };
   });
+
+  return tasks;
 }
 
 export function ActiveTasksList({
