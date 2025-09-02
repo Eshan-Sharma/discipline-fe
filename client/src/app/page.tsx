@@ -12,6 +12,9 @@ import { clusterApiUrl } from "@solana/web3.js";
 import { Toaster } from "react-hot-toast";
 import { DisciplineApp } from "@/components/DisciplineApp";
 
+// Import wallet adapter styles
+import "@solana/wallet-adapter-react-ui/styles.css";
+
 export default function Home() {
   const network = WalletAdapterNetwork.Devnet;
   const endpoint = useMemo(() => clusterApiUrl(network), [network]);

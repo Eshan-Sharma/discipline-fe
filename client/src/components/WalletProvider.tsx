@@ -16,8 +16,7 @@ import { clusterApiUrl } from "@solana/web3.js";
 const SOLANA_NETWORK = "https://api.devnet.solana.com";
 
 // Import wallet adapter CSS
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-require("@solana/wallet-adapter-react-ui/styles.css");
+import "@solana/wallet-adapter-react-ui/styles.css";
 
 interface Props {
   children: ReactNode;
