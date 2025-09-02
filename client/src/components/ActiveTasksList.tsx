@@ -4,6 +4,12 @@ import { motion } from "framer-motion";
 import { TaskCard } from "./TaskCard";
 import { Task } from "./DisciplineApp";
 import { CheckCircle, XCircle, Clock } from "lucide-react";
+import { PublicKey, Connection, Transaction } from "@solana/web3.js";
+import idl from "../../../discipline.json";
+import type discipline from "../../../discipline.json";
+import { AnchorProvider, Program, Idl, Wallet } from "@coral-xyz/anchor";
+import { useEffect, useState } from "react";
+import BN from "@coral-xyz/anchor";
 
 interface ActiveTasksListProps {
   tasks: Task[];
@@ -11,13 +17,92 @@ interface ActiveTasksListProps {
   isLoading: boolean;
   userPublicKey?: string;
 }
+const PROGRAM_ID = new PublicKey(
+  "8d8w7DMGf8G41nmg2qnDGDqL6d4hGABNPHLpTnTUfoqn"
+);
+const SOLANA_RPC = "https://api.devnet.solana.com";
+
+// ---- types based on your IDL ----
+type TaskAccount = {
+  taskId: typeof BN;
+  owner: PublicKey;
+  description: string;
+  stakeAmount: typeof BN;
+  expiresAt: typeof BN;
+  status:
+    | { pending?: Record<string, never> }
+    | { completed?: Record<string, never> }
+    | { failed?: Record<string, never> };
+  taskBump: number;
+  vaultBump: number;
+};
+
+interface MinimalWallet {
+  publicKey: PublicKey;
+  signTransaction: (tx: Transaction) => Promise<Transaction>;
+  signAllTransactions: (txs: Transaction[]) => Promise<Transaction[]>;
+}
+export async function fetchTasks(userPublicKey: string) {
+  const connection = new Connection(SOLANA_RPC, "confirmed");
+
+  const dummyWallet: MinimalWallet = {
+    publicKey: new PublicKey(userPublicKey),
+    signTransaction: async (tx) => tx,
+    signAllTransactions: async (txs) => txs,
+  };
+
+  const provider = new AnchorProvider(connection, dummyWallet as Wallet, {
+    preflightCommitment: "processed",
+  });
+
+  const program = new Program(idl as Idl, provider) as Program<Idl>;
+
+  const filters = [
+    {
+      memcmp: {
+        offset: 16, // discriminator (8) + task_id (8)
+        bytes: userPublicKey,
+      },
+    },
+  ];
+
+  // Replace 'task' with the correct account name from your IDL, e.g., 'tasks' if that's the actual account name
+  const accounts = await program.account.task.all(filters);
+
+  return accounts.map((acc: { account: TaskAccount; publicKey: PublicKey }) => {
+    const { account, publicKey } = acc;
+
+    const status =
+      "pending" in account.status
+        ? "pending"
+        : "completed" in account.status
+        ? "completed"
+        : "failed";
+
+    return {
+      id: account.taskId,
+      owner: account.owner.toBase58(),
+      description: account.description,
+      stakeAmount: account.stakeAmount.toString(),
+      expiresAt: account.expiresAt,
+      status,
+      pubkey: publicKey.toBase58(),
+    };
+  });
+}
 
 export function ActiveTasksList({
-  tasks,
   onResolveTask,
   isLoading,
   userPublicKey,
 }: ActiveTasksListProps) {
+  const [tasks, setTasks] = useState<Task[]>([]);
+
+  useEffect(() => {
+    if (!userPublicKey) return;
+    fetchTasks(userPublicKey).then(setTasks).catch(console.error);
+  }, [userPublicKey]);
+
   const pendingTasks = tasks.filter((task) => task.status === "pending");
   const completedTasks = tasks.filter((task) => task.status === "completed");
   const failedTasks = tasks.filter((task) => task.status === "failed");

@@ -4,6 +4,41 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Clock, CheckCircle, XCircle, Trophy, Heart } from "lucide-react";
 import { Task } from "././DisciplineApp";
+import idl from "../../../discipline.json";
+
+/////////
+import { PublicKey } from "@solana/web3.js";
+import * as anchor from "@coral-xyz/anchor";
+
+// Program ID
+const PROGRAM_ID = new PublicKey(
+  "8d8w7DMGf8G41nmg2qnDGDqL6d4hGABNPHLpTnTUfoqn"
+);
+
+// Seeds
+const getTaskPDA = async (owner: PublicKey, taskId: number) => {
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from("task"),
+      owner.toBuffer(),
+      new anchor.BN(taskId).toArrayLike(Buffer, "le", 8),
+    ],
+    PROGRAM_ID
+  );
+};
+
+const getVaultPDA = async (taskPda: PublicKey) => {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("vault"), taskPda.toBuffer()],
+    PROGRAM_ID
+  );
+};
+
+const getGlobalStatePDA = () => {
+  return PublicKey.findProgramAddressSync([Buffer.from("state")], PROGRAM_ID);
+};
+
+////////////
 
 interface TaskCardProps {
   task: Task;
@@ -16,11 +51,50 @@ interface TaskCardProps {
 export function TaskCard({
   task,
   onResolveTask,
-  isLoading,
   isOwner,
   index,
 }: TaskCardProps) {
   const [timeRemaining, setTimeRemaining] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+
+  onResolveTask = async (taskId: number, completed: boolean) => {
+    try {
+      setIsLoading(true);
+
+      const provider = anchor.AnchorProvider.env(); // or your custom provider
+      const program = new anchor.Program(idl, provider);
+
+      const owner = provider.wallet.publicKey;
+
+      const [taskPda] = await getTaskPDA(owner, taskId);
+      const [vaultPda] = await getVaultPDA(taskPda);
+      const [globalStatePda] = await getGlobalStatePDA();
+
+      // Replace with your actual charity account (must match program check)
+      const CHARITY_WALLET = new PublicKey(
+        "3rzenMHF1M27EAK7moeTgLdKepu1pXWvFs9jTWpAeCCb"
+      );
+
+      const txSig = await program.methods
+        .resolveTask(new anchor.BN(taskId), completed)
+        .accounts({
+          owner,
+          task: taskPda,
+          vault: vaultPda,
+          charity: CHARITY_WALLET,
+          globalState: globalStatePda,
+          systemProgram: anchor.web3.SystemProgram.programId,
+          clock: anchor.web3.SYSVAR_CLOCK_PUBKEY,
+        })
+        .rpc();
+
+      console.log("✅ Task resolved:", txSig);
+    } catch (err) {
+      console.error("❌ Resolve task failed:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (task.status !== "pending") return;
