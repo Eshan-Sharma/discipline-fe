@@ -13,7 +13,7 @@ import { Toaster } from "react-hot-toast";
 import { DisciplineApp } from "@/components/DisciplineApp";
 
 // Import wallet adapter styles
-require("@solana/wallet-adapter-react-ui/styles.css");
+import "@solana/wallet-adapter-react-ui/styles.css";
 
 export default function Home() {
   const network = WalletAdapterNetwork.Devnet;

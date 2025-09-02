@@ -1,26 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { Program, AnchorProvider, web3, BN } from "@coral-xyz/anchor";
-import { PublicKey } from "@solana/web3.js";
 import toast from "react-hot-toast";
 import { Header } from "./Header";
 import { CreateTaskSection } from "./CreateTaskSection";
 import { ActiveTasksList } from "./ActiveTasksList";
 import { StatsSection } from "./StatsSection";
-
-import idl from "../../../../anchor_project/discipline/target/idl/discipline.json";
-
-const DISCIPLINE_IDL = idl as unknown;
-const PROGRAM_ID = new PublicKey(
-  "8d8w7DMGf8G41nmg2qnDGDqL6d4hGABNPHLpTnTUfoqn"
-);
-
-// ⚠️ Replace with your program’s actual hardcoded charity pubkey
-const CHARITY_PUBKEY = new PublicKey(
-  "3rzenMHF1M27EAK7moeTgLdKepu1pXWvFs9jTWpAeCCb"
-);
 
 export interface Task {
   id: number;
@@ -34,184 +19,96 @@ export interface Task {
 }
 
 export function DisciplineApp() {
-  const { connection } = useConnection();
-  const wallet = useWallet();
+  // 🔹 Local mock state
   const [tasks, setTasks] = useState<Task[]>([]);
   const [totalDonated, setTotalDonated] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [connected, setConnected] = useState(true); // pretend wallet is always connected
+  const [mockUser] = useState("mock-user-public-key");
 
-  const getProgram = () => {
-    if (!wallet.publicKey) return null;
-    const provider = new AnchorProvider(
-      connection,
-      wallet as any,
-      AnchorProvider.defaultOptions()
-    );
-    return new Program(DISCIPLINE_IDL, PROGRAM_ID, provider);
-  };
-
-  // fetch tasks + donation tally
+  // load some fake tasks at startup
   useEffect(() => {
-    const loadTasks = async () => {
-      if (!wallet.connected || !wallet.publicKey) return;
-      try {
-        const program = getProgram();
-        if (!program) return;
+    const fakeTasks: Task[] = [
+      {
+        id: 1,
+        description: "Go to gym",
+        stakeAmount: 1,
+        duration: 7,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+        status: "pending",
+        owner: mockUser,
+      },
+      {
+        id: 2,
+        description: "Read a book",
+        stakeAmount: 0.5,
+        duration: 3,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 3 * 24 * 60 * 60 * 1000,
+        status: "failed",
+        owner: mockUser,
+      },
+    ];
+    setTasks(fakeTasks);
+    setTotalDonated(0.5);
+  }, [mockUser]);
 
-        // fetch all tasks
-        const allTasks = await program.account.task.all();
-        const userTasks = allTasks.filter(
-          (t) => t.account.owner.toString() === wallet.publicKey?.toString()
-        );
-
-        setTasks(
-          userTasks.map((t) => {
-            const status = Object.keys(t.account.status)[0].toLowerCase();
-            return {
-              id: t.account.taskId.toNumber(),
-              description: t.account.description,
-              stakeAmount:
-                t.account.stakeAmount.toNumber() / web3.LAMPORTS_PER_SOL,
-              duration: 0, // could be derived if you store explicitly
-              createdAt: Date.now(), // placeholder if not in struct
-              expiresAt: t.account.expiresAt.toNumber() * 1000,
-              status: status as "pending" | "completed" | "failed",
-              owner: t.account.owner.toString(),
-            };
-          })
-        );
-
-        // fetch global donations
-        const [globalStatePda] = web3.PublicKey.findProgramAddressSync(
-          [Buffer.from("state")],
-          program.programId
-        );
-        const globalState = await program.account.globalState.fetch(
-          globalStatePda
-        );
-        setTotalDonated(
-          globalState.totalDonated.toNumber() / web3.LAMPORTS_PER_SOL
-        );
-      } catch (err) {
-        console.error("Error fetching tasks:", err);
-      }
-    };
-
-    loadTasks();
-  }, [wallet.connected, wallet.publicKey, connection]);
-
+  // mock createTask
   const createTask = async (
     description: string,
     duration: number,
     stakeAmount: number
   ) => {
-    if (!wallet.connected || !wallet.publicKey) {
+    if (!connected) {
       toast.error("Please connect your wallet first");
       return;
     }
 
     setIsLoading(true);
-    try {
-      const program = getProgram();
-      if (!program) throw new Error("Program not initialized");
-
-      const taskId = new BN(Date.now());
-
-      const [taskPda] = web3.PublicKey.findProgramAddressSync(
-        [
-          Buffer.from("task"),
-          wallet.publicKey.toBuffer(),
-          taskId.toArrayLike(Buffer, "le", 8),
-        ],
-        program.programId
-      );
-
-      const [vaultPda] = web3.PublicKey.findProgramAddressSync(
-        [Buffer.from("vault"), taskPda.toBuffer()],
-        program.programId
-      );
-
-      await program.methods
-        .createTask(
-          taskId,
-          description,
-          new BN(duration),
-          new BN(stakeAmount * web3.LAMPORTS_PER_SOL)
-        )
-        .accounts({
-          owner: wallet.publicKey,
-          task: taskPda,
-          vault: vaultPda,
-          systemProgram: web3.SystemProgram.programId,
-          clock: web3.SYSVAR_CLOCK_PUBKEY,
-        })
-        .rpc();
-
-      toast.success(`Task created! ${stakeAmount} SOL staked`);
-    } catch (err) {
-      console.error("Error creating task:", err);
-      toast.error("Failed to create task");
-    } finally {
+    setTimeout(() => {
+      const newTask: Task = {
+        id: Date.now(),
+        description,
+        stakeAmount,
+        duration,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + duration * 24 * 60 * 60 * 1000,
+        status: "pending",
+        owner: mockUser,
+      };
+      setTasks((prev) => [...prev, newTask]);
       setIsLoading(false);
-    }
+      toast.success(`Task created! ${stakeAmount} SOL staked (mock)`);
+    }, 800);
   };
 
+  // mock resolveTask
   const resolveTask = async (taskId: number, completed: boolean) => {
-    if (!wallet.connected || !wallet.publicKey) {
+    if (!connected) {
       toast.error("Please connect your wallet first");
       return;
     }
 
     setIsLoading(true);
-    try {
-      const program = getProgram();
-      if (!program) throw new Error("Program not initialized");
-
-      const taskIdBN = new BN(taskId);
-
-      const [taskPda] = web3.PublicKey.findProgramAddressSync(
-        [
-          Buffer.from("task"),
-          wallet.publicKey.toBuffer(),
-          taskIdBN.toArrayLike(Buffer, "le", 8),
-        ],
-        program.programId
+    setTimeout(() => {
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId
+            ? { ...t, status: completed ? "completed" : "failed" }
+            : t
+        )
       );
-
-      const [vaultPda] = web3.PublicKey.findProgramAddressSync(
-        [Buffer.from("vault"), taskPda.toBuffer()],
-        program.programId
-      );
-
-      const [globalStatePda] = web3.PublicKey.findProgramAddressSync(
-        [Buffer.from("state")],
-        program.programId
-      );
-
-      await program.methods
-        .resolveTask(taskIdBN, completed)
-        .accounts({
-          owner: wallet.publicKey,
-          task: taskPda,
-          vault: vaultPda,
-          charity: CHARITY_PUBKEY,
-          globalState: globalStatePda,
-          systemProgram: web3.SystemProgram.programId,
-          clock: web3.SYSVAR_CLOCK_PUBKEY,
-        })
-        .rpc();
 
       if (completed) {
-        toast.success("Task completed! SOL returned to your wallet");
+        toast.success("Task completed! SOL returned (mock)");
       } else {
-        toast.success("Task failed. Stake donated to charity");
+        setTotalDonated((prev) => prev + 1); // pretend we donate 1 SOL
+        toast.success("Task failed. Stake donated to charity (mock)");
       }
-    } catch (err) {
-      console.error("Error resolving task:", err);
-      toast.error("Failed to resolve task");
-    } finally {
+
       setIsLoading(false);
-    }
+    }, 800);
   };
 
   return (
@@ -225,14 +122,14 @@ export function DisciplineApp() {
           <CreateTaskSection
             onCreateTask={createTask}
             isLoading={isLoading}
-            connected={wallet.connected}
+            connected={connected}
           />
 
           <ActiveTasksList
             tasks={tasks}
             onResolveTask={resolveTask}
             isLoading={isLoading}
-            userPublicKey={wallet.publicKey?.toString()}
+            userPublicKey={mockUser}
           />
         </div>
       </div>
